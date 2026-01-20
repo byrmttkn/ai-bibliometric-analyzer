@@ -1,0 +1,7 @@
+# API Anahtarlarını gizle
+.env
+
+# Gereksiz sistem dosyaları
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store

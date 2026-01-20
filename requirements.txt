@@ -1,0 +1,6 @@
+requests
+pandas
+matplotlib
+seaborn
+google-generativeai
+python-dotenv
