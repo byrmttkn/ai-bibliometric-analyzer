@@ -1,271 +1,313 @@
+"""
+OpenAlex Data Analyzer (Self-Installing)
+========================================
+
+Description:
+  This script analyzes academic paper data from OpenAlex.
+  It automatically creates a 'results' folder in the script's directory,
+  installs missing dependencies, and generates insights.
+
+Usage:
+  1. Ensure 'requirements.txt' is in the same folder.
+  2. Run this script: python main.py
+"""
+
+import sys
+import subprocess
+import os
+import importlib
+
+# --- Dependency Management ---
+
+def install_requirements():
+    """
+    Checks for requirements.txt and installs dependencies via pip.
+    """
+    req_file = "requirements.txt"
+    if not os.path.exists(req_file):
+        print(f"Error: '{req_file}' not found. Cannot install dependencies.")
+        sys.exit(1)
+
+    print(f"Installing dependencies from {req_file}...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file])
+        print("Dependencies installed successfully.\n")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install dependencies: {e}")
+        sys.exit(1)
+
+def check_and_import_dependencies():
+    """
+    Tries to import required libraries. If they fail, triggers installation.
+    """
+    required_libs = ['requests', 'pandas', 'matplotlib', 'seaborn', 'pycountry']
+    
+    missing_libs = []
+    for lib in required_libs:
+        if importlib.util.find_spec(lib) is None:
+            missing_libs.append(lib)
+    
+    if missing_libs:
+        print(f"Missing libraries detected: {', '.join(missing_libs)}")
+        install_requirements()
+    else:
+        # Check passed implicitly
+        pass
+
+# --- Perform Dependency Check Before Main Imports ---
+check_and_import_dependencies()
+
+# --- Main Imports (After Check) ---
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import google.generativeai as genai
-import sys
-import time
-import os
-from dotenv import load_dotenv
+import pycountry
 
-# --- SECURITY CONFIGURATION ---
-# Load environment variables from the .env file
-load_dotenv()
-
-# Get the API Key safely
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-EMAIL = "mail@example.com" # OpenAlex Polite Pool
-
-# Check if API Key exists
-if not GOOGLE_API_KEY:
-    print("\n[CRITICAL ERROR] Google API Key not found!")
-    print("Please create a '.env' file in this folder and add: GOOGLE_API_KEY=AIza...")
-    sys.exit()
-
-# Configure Plot Style
-sns.set_theme(style="whitegrid")
+# --- Configuration ---
+# Please replace with your actual email for the OpenAlex Polite Pool
+EMAIL = "your_email@example.com" 
 
 def reconstruct_abstract(inverted_index):
     """
-    Decodes OpenAlex's 'inverted index' format into a readable string.
+    Reconstructs the full abstract text from OpenAlex's inverted index format.
     """
     if not inverted_index:
-        return "[No Abstract Available]"
-    
+        return ""
     word_index = []
     for word, positions in inverted_index.items():
         for pos in positions:
             word_index.append((pos, word))
-    
-    # Sort by position to reconstruct the sentence
-    sorted_words = sorted(word_index, key=lambda x: x[0])
-    return " ".join(word for _, word in sorted_words)
+    word_index.sort()
+    return " ".join([word for _, word in word_index])
 
-def get_user_inputs():
-    """Gets search parameters from the user."""
-    print("\n" + "="*60)
-    print("♾️  SCHOLAR INSIGHT AI: Unlimited Bibliometric Analyzer")
-    print("="*60)
-    
-    keyword = input("1. Enter Research Topic (e.g., recycled concrete powder): ").strip()
-    # Add quotes if the user forgot them for multi-word queries
-    if " " in keyword and not keyword.startswith('"'):
-        keyword = f'"{keyword}"'
-    
-    year = input("2. Start Year (e.g., 2020): ").strip()
-    year = int(year) if year.isdigit() else 2018
-    
-    return keyword, year
+def get_country_name(code):
+    """
+    Converts a 2-letter ISO country code to its full English name.
+    """
+    if not code: return "Unknown"
+    try:
+        return pycountry.countries.get(alpha_2=code).name
+    except:
+        return code
 
-def fetch_unlimited_data(keyword, year_from):
-    """
-    Fetches up to 500 papers including Metadata and Abstracts from OpenAlex.
-    """
+def fetch_openalex_data():
+    print("--- OpenAlex Data Fetcher ---")
+    
+    # 1. Collect User Inputs
+    keywords = input("Keyword(s) (e.g., 'generative ai'): ")
+    start_year = input("Start Year (YYYY): ")
+    end_year = input("End Year (YYYY): ")
+    
+    inc_conf = input("Include Conference Papers? (y/n): ").lower()
+    inc_books = input("Include Books/Book Chapters? (y/n): ").lower()
+    
+    # --- AUTOMATIC DIRECTORY SETUP ---
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Define 'results' folder path relative to the script
+    output_dir = os.path.join(script_dir, "results")
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"\nCreated output directory: {output_dir}")
+    else:
+        print(f"\nResults will be saved to: {output_dir}")
+    # ----------------------------------
+
+    # 2. Build API Query Filters
     base_url = "https://api.openalex.org/works"
+    filters = [f"publication_year:{start_year}-{end_year}"]
     
-    # Filter: Search in Title/Abstract + Date + Article Type
-    filter_param = (
-        f"title_and_abstract.search:{keyword},"
-        f"from_publication_date:{year_from}-01-01,"
-        f"type:article"
-    )
+    types = ["article"]
+    if inc_conf == 'y':
+        types.append("proceedings-article")
+    if inc_books == 'y':
+        types.extend(["book", "book-chapter"])
+    
+    type_filter = "|".join(types)
+    filters.append(f"type:{type_filter}")
+    
+    params = {
+        "search": keywords,
+        "filter": ",".join(filters),
+        "per_page": 200,
+        "mailto": EMAIL
+    }
 
-    # Fields to retrieve (optimized for speed)
-    select_fields = "id,title,publication_year,cited_by_count,primary_location,authorships,abstract_inverted_index"
-
-    print(f"\n[SYSTEM] Starting 'UNLIMITED' Data Mining...")
-    print(f"[INFO] Target: ~500 Papers with Full Abstracts regarding {keyword}...")
+    print(f"Fetching data from OpenAlex... (Included types: {types})")
     
-    all_rows = []       
-    unique_papers_for_ai = []  
+    works_data = []
+    cursor = "*"
     
-    # Loop through 5 pages (100 papers per page = 500 papers)
-    for page in range(1, 6): 
-        params = {
-            "filter": filter_param,
-            "mailto": EMAIL, 
-            "per_page": 100,
-            "page": page,
-            "sort": "cited_by_count:desc",
-            "select": select_fields
-        }
-        
+    while True:
+        params["cursor"] = cursor
         try:
-            response = requests.get(base_url, params=params)
-            if response.status_code != 200:
-                print(f"   -> Error accessing Page {page}. Status: {response.status_code}")
-                break
-                
-            results = response.json().get('results', [])
+            r = requests.get(base_url, params=params)
+            r.raise_for_status()
+            data = r.json()
+            
+            results = data.get('results', [])
             if not results:
                 break
                 
-            print(f"   -> Page {page} downloaded successfully ({len(results)} papers).")
-            
             for work in results:
-                title = work.get('title', 'No Title')
+                # Metadata extraction
+                title = work.get('title', '')
                 pub_year = work.get('publication_year')
-                cited = work.get('cited_by_count')
+                citations = work.get('cited_by_count', 0)
                 
-                # 1. Decode Abstract
-                raw_abstract = work.get('abstract_inverted_index')
-                abstract_text = reconstruct_abstract(raw_abstract)
+                source_name = "Unknown"
+                if work.get('primary_location') and work['primary_location'].get('source'):
+                    source_name = work['primary_location']['source']['display_name']
                 
-                # 2. Get Journal Name
-                loc = work.get('primary_location') or {}
-                source = loc.get('source') or {}
-                journal = source.get('display_name', 'Unknown Journal')
-
-                # 3. Get First Author Info (for AI Context)
-                authorships = work.get('authorships', [])
-                first_auth_str = "Unknown"
-                if authorships:
-                    first_auth = authorships[0]
-                    f_name = first_auth['author']['display_name']
-                    # Try to find country code
-                    if first_auth.get('institutions'):
-                        f_country = first_auth['institutions'][0].get('country_code', 'N/A')
-                    else:
-                        f_country = "N/A"
-                    first_auth_str = f"{f_name} ({f_country})"
-
-                # 4. Append to AI Context List
-                unique_papers_for_ai.append(
-                    f"ID: {work.get('id')}\n"
-                    f"TITLE: {title}\n"
-                    f"METADATA: Year {pub_year} | {cited} Citations | Journal: {journal} | Author: {first_auth_str}\n"
-                    f"ABSTRACT: {abstract_text}\n" 
-                    f"--------------------------------------------------"
-                )
-
-                # 5. Append to DataFrame List (for Graphs)
-                # We iterate through ALL authors to get accurate country/author stats
-                for authorship in authorships:
-                    author_obj = authorship.get('author', {})
-                    institutions = authorship.get('institutions', [])
+                authors_list = []
+                countries_list = []
+                institutions_list = []
+                
+                for authorship in work.get('authorships', []):
+                    author_name = authorship['author']['display_name']
+                    authors_list.append(author_name)
                     
-                    if institutions:
-                        country_code = institutions[0].get('country_code', 'N/A')
-                    else:
-                        country_code = "N/A"
-                    
-                    all_rows.append({
-                        "Author": author_obj.get('display_name', 'Unknown'),
-                        "Country": country_code,
-                        "Journal": journal,
-                        "Year": pub_year,
-                        "Citations": cited
-                    })
+                    for inst in authorship.get('institutions', []):
+                        institutions_list.append(inst['display_name'])
+                        cc = inst.get('country_code')
+                        if cc:
+                            countries_list.append(get_country_name(cc))
+                
+                abstract_text = reconstruct_abstract(work.get('abstract_inverted_index'))
+                concepts = [c['display_name'] for c in work.get('concepts', [])]
+                
+                works_data.append({
+                    'title': title,
+                    'publication_year': pub_year,
+                    'cited_by_count': citations,
+                    'source_name': source_name,
+                    'authors': authors_list,
+                    'authors_str': "; ".join(authors_list),
+                    'institutions': "; ".join(list(set(institutions_list))),
+                    'countries': countries_list,
+                    'countries_str': "; ".join(list(set(countries_list))),
+                    'abstract': abstract_text,
+                    'keywords': "; ".join(concepts)
+                })
             
-            # Respect API limits
-            time.sleep(0.5)
-
+            cursor = data['meta']['next_cursor']
+            print(f"Fetched {len(works_data)} records so far...")
+            
+            if len(works_data) >= 2000:
+                print("Demo limit of 2000 records reached.")
+                break
+                
         except Exception as e:
-            print(f"[ERROR] Exception occurred: {e}")
+            print(f"An error occurred during fetching: {e}")
             break
 
-    df = pd.DataFrame(all_rows)
-    return df, unique_papers_for_ai
-
-def show_graphs(df, keyword):
-    """Generates visualization plots."""
-    if df.empty: return
-    print("\n[GRAPHICS] Generating visual insights...")
-    
-    # Plot 1: Top Active Countries
-    plt.figure(figsize=(12, 6))
-    df_country = df[df['Country'] != 'N/A']
-    top_countries = df_country['Country'].value_counts().head(20) 
-    
-    sns.barplot(x=top_countries.values, y=top_countries.index, palette="coolwarm")
-    plt.title(f"Top 20 Active Countries (Based on Author Affiliations)")
-    plt.xlabel("Number of Contributions")
-    plt.tight_layout()
-    plt.show()
-
-    # Plot 2: Most Productive Authors
-    plt.figure(figsize=(12, 8))
-    top_authors = df['Author'].value_counts().head(20) 
-    
-    sns.barplot(x=top_authors.values, y=top_authors.index, palette="viridis")
-    plt.title(f"Top 20 Most Productive Authors")
-    plt.xlabel("Number of Papers in Dataset")
-    plt.tight_layout()
-    plt.show()
-
-def chat_with_gemini(unique_papers, keyword):
-    """Initializes the RAG (Retrieval-Augmented Generation) session."""
-    print(f"\n[AI] Initializing Gemini 2.5 Flash Model...")
-    print(f"[INFO] Uploading {len(unique_papers)} full papers (titles + abstracts) to the context window.")
-    
-    try:
-        genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel('models/gemini-2.5-flash')
-        
-        # Merge all papers into one massive text block
-        full_context = "\n".join(unique_papers)
-        
-        system_prompt = f"""
-        You are an advanced academic research assistant utilizing RAG (Retrieval-Augmented Generation).
-        Topic: '{keyword}'.
-        
-        I am providing you with a dataset containing approximately {len(unique_papers)} academic papers (Metadata + Abstracts).
-        
-        YOUR INSTRUCTIONS:
-        1. Analyze the 'Abstracts' deeply to understand methodologies, materials, and results.
-        2. Identify conflicting results in the literature (e.g., Paper A says X improves strength, Paper B says it reduces it).
-        3. Highlight the most frequently used experimental methods.
-        4. Answer specific questions about authors, countries, and collaboration opportunities.
-        5. Maintain a professional, academic tone in English.
-        """
-
-        print("Uploading data to AI (This may take a few seconds)...")
-        
-        chat = model.start_chat(history=[
-            {"role": "user", "parts": [system_prompt]},
-            {"role": "model", "parts": ["Dataset received. I have analyzed the abstracts and metadata. I am ready to answer your research questions."]}
-        ])
-
-        print("\n" + "="*60)
-        print("💬  INTERACTIVE CHAT MODE (English)")
-        print("💡  Suggested Questions:")
-        print("    - What are the most common test methods mentioned in the abstracts?")
-        print("    - Are there any contradictions regarding the effect of the material on durability?")
-        print("    - Which countries seem to focus on environmental impact?")
-        print("="*60)
-
-        while True:
-            user_input = input("You: ")
-            if user_input.lower() in ['q', 'exit', 'quit']:
-                print("Exiting analysis. Goodbye!")
-                break
-            
-            try:
-                print("Gemini is thinking...", end="\r")
-                response = chat.send_message(user_input)
-                print(f"\nGemini: {response.text}\n")
-            except Exception as e:
-                print(f"\n[API Error]: {e}")
-
-    except Exception as e:
-        print(f"[Connection Error]: {e}")
-
-def main():
-    # 1. Get User Input
-    keyword, year = get_user_inputs()
-    
-    # 2. Fetch Data (Unlimited Mode)
-    df, unique_papers = fetch_unlimited_data(keyword, year)
-    
+    # 3. Export Data
+    df = pd.DataFrame(works_data)
     if df.empty:
-        print("[System] No data found. Please check your keyword.")
+        print("No papers found matching these parameters.")
         return
 
-    # 3. Show Visualizations
-    show_graphs(df, keyword)
+    df_export = df.drop(columns=['authors', 'countries']) 
+    csv_path = os.path.join(output_dir, "openalex_papers.csv")
+    df_export.to_csv(csv_path, index=False)
+    print(f"\nData successfully saved to: {csv_path}")
+
+    # 4. Generate Visualizations
+    generate_plots(df, output_dir)
+
+def generate_plots(df, output_dir):
+    sns.set_theme(style="whitegrid")
     
-    # 4. Start AI Chat
-    chat_with_gemini(unique_papers, keyword)
+    # 1. Publication Trend
+    plt.figure(figsize=(10, 6))
+    year_counts = df['publication_year'].value_counts().sort_index()
+    if not year_counts.empty:
+        sns.lineplot(x=year_counts.index, y=year_counts.values, marker="o")
+        plt.title("Publication Trend (Count vs Year)")
+        plt.xlabel("Year")
+        plt.ylabel("Number of Publications")
+        plt.savefig(os.path.join(output_dir, "1_publication_trend.png"))
+        plt.show()
+
+    # 2. Top Active Countries
+    all_countries = [c for sublist in df['countries'] for c in sublist]
+    if all_countries:
+        country_counts = pd.Series(all_countries).value_counts().head(10)
+        plt.figure(figsize=(12, 6))
+        sns.barplot(x=country_counts.values, y=country_counts.index, hue=country_counts.index, palette="viridis", legend=False)
+        plt.title("Top 10 Active Countries")
+        plt.xlabel("Number of Affiliated Papers")
+        plt.savefig(os.path.join(output_dir, "2_top_countries.png"))
+        plt.show()
+
+    # 3. Top Researchers
+    all_authors = [a for sublist in df['authors'] for a in sublist]
+    if all_authors:
+        author_counts = pd.Series(all_authors).value_counts().head(10)
+        plt.figure(figsize=(12, 6))
+        sns.barplot(x=author_counts.values, y=author_counts.index, hue=author_counts.index, palette="magma", legend=False)
+        plt.title("Top 10 Researchers")
+        plt.xlabel("Number of Papers in Dataset")
+        plt.savefig(os.path.join(output_dir, "3_top_researchers.png"))
+        plt.show()
+
+    # 4. Top Journals
+    journal_counts = df['source_name'].value_counts().head(10)
+    if not journal_counts.empty:
+        plt.figure(figsize=(12, 6))
+        sns.barplot(x=journal_counts.values, y=journal_counts.index, hue=journal_counts.index, palette="rocket", legend=False)
+        plt.title("Top 10 Journals / Sources")
+        plt.xlabel("Count")
+        plt.savefig(os.path.join(output_dir, "4_top_journals.png"))
+        plt.show()
+
+    # 5. Impact Timeline (Scatter)
+    plt.figure(figsize=(12, 7))
+    sns.scatterplot(
+        data=df,
+        x="publication_year",
+        y="cited_by_count",
+        size="cited_by_count",
+        sizes=(20, 500),
+        alpha=0.7,
+        color="purple",         
+        legend=False            
+    )
+    plt.title("Impact Timeline (Individual Paper Citations by Year)")
+    plt.xlabel("Publication Year")
+    plt.ylabel("Citations")
+    plt.savefig(os.path.join(output_dir, "5_impact_timeline_scatter.png"))
+    plt.show()
+
+    # 6. Heatmap: Top Countries vs Years
+    country_year_data = []
+    for index, row in df.iterrows():
+        year = row['publication_year']
+        if year and row['countries']:
+            for country in row['countries']:
+                country_year_data.append({'year': year, 'country': country})
+    
+    if country_year_data:
+        df_cy = pd.DataFrame(country_year_data)
+        top_countries = df_cy['country'].value_counts().head(10).index
+        df_cy_filtered = df_cy[df_cy['country'].isin(top_countries)]
+        heatmap_data = df_cy_filtered.groupby(['country', 'year']).size().unstack(fill_value=0)
+
+        plt.figure(figsize=(14, 8))
+        sns.heatmap(heatmap_data, cmap="YlGnBu", linewidths=.5, annot=True, fmt="d", cbar_kws={'label': 'Number of Publications'})
+        plt.title("Heatmap: Publication Activity by Top Countries over Years")
+        plt.ylabel("Country")
+        plt.xlabel("Year")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, "6_country_year_heatmap.png"))
+        plt.show()
+    else:
+        print("\nNot enough country/year data to generate heatmap.")
+
+    print(f"\nAll plots have been generated and saved to: {output_dir}")
 
 if __name__ == "__main__":
-    main()
+    fetch_openalex_data()
