@@ -1,37 +1,125 @@
-This tool performs advanced bibliometric analysis using OpenAlex (for data mining) and Google Gemini 2.5 Flash (for AI-powered insights). It fetches hundreds of academic papers, visualizes trends, and allows you to "chat" with the research data.
+# OpenAlex Academic Data Analyzer 📊
 
-FEATURES
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![OpenAlex](https://img.shields.io/badge/Data-OpenAlex_API-orange)
 
-Unlimited Mode: Fetches up to 500+ papers with full abstracts.
+A powerful, self-installing Python tool to fetch, analyze, and visualize academic research data using the **OpenAlex API**. 
 
-Deep Analysis: Decodes OpenAlex inverted abstracts into readable text.
+This tool automates the literature review process by extracting metadata (titles, abstracts, authors, countries) and generating insightful visualizations—ready for export to AI tools (like Gemini/ChatGPT) or inclusion in reports.
 
-Visualizations: Generates graphs for Top Countries, Active Authors, and more.
+## 🚀 Features
 
-RAG Chat: Uses Retrieval-Augmented Generation to answer questions like "What are the conflicting results in this field?".
+* **Automated Data Fetching:** Retrieves papers based on keywords, date ranges, and document types.
+* **Smart Metadata Extraction:** Reconstructs abstracts from inverted indexes, resolves country codes to full names, and aggregates author data.
+* **Self-Healing Dependencies:** Automatically checks and installs required libraries (`requirements.txt`) upon first run.
+* **Machine-Readable Output:** Exports a clean `.csv` file perfect for further analysis with LLMs.
+* **6 Automatic Visualizations:**
+    1.  📈 **Publication Trend:** Line chart of activity over time.
+    2.  🌍 **Top Active Countries:** Bar chart of global contribution.
+    3.  👩‍🔬 **Top Researchers:** Identification of leading authors.
+    4.  📰 **Top Journals:** Most frequent publication venues.
+    5.  🟣 **Impact Timeline:** Bubble/Scatter plot (Citations vs. Year).
+    6.  🔥 **Activity Heatmap:** Intensity of top countries over years.
 
-INSTALLATION & SETUP
+## 📦 Installation
 
-Clone the Repository Download this project to your local machine.
+This script comes with a **self-installation mechanism**. You don't need to manually install libraries if you have Python and `pip` installed.
 
-Install Dependencies Open your terminal/command prompt and run: pip install -r requirements.txt
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/yourusername/openalex-analyzer.git
+    cd openalex-analyzer
+    ```
 
-API Key Setup (Important!) You need a Google Gemini API Key to run the AI features.
+2.  **Run the script:**
+    ```bash
+    python main.py
+    ```
+    *On the first run, the script will automatically detect missing libraries (pandas, seaborn, etc.) and install them from `requirements.txt`.*
 
-Get a free key from Google AI Studio (https://aistudio.google.com/).
+## ⚙️ Configuration
 
-Create a new file named .env in the project folder.
+Open `main.py` and update the `EMAIL` variable. 
+This adds you to the [OpenAlex Polite Pool](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication), ensuring much faster response times.
 
-Add your key inside it like this: GOOGLE_API_KEY=AIzaSy... (Paste your key here) (Do not share your .env file with anyone!)
+```python
+# In main.py
+EMAIL = "your_email@example.com" 
+```
 
-USAGE Run the main script: python main.py Follow the on-screen prompts to enter your research topic and start year.
+## 🖥️ Usage
 
-EXAMPLE OUTPUT The tool will display:
+Run the script and follow the interactive prompts. The script will automatically create a `results` folder in the same directory.
 
-Country Distribution Graph
+```text
+--- OpenAlex Data Fetcher ---
+Keyword(s): "generative ai" OR "large language models"
+Start Year (YYYY): 2020
+End Year (YYYY): 2024
+Include Conference Papers? (y/n): y
+Include Books/Book Chapters? (y/n): n
+```
 
-Top Authors Chart
+### 💡 Input Guide & Search Tips
 
-Interactive AI Chat Session
+Here is how to answer the prompts for the best results:
 
-Project created for Academic Research Collaboration.
+#### 1. Keyword(s)
+This input supports the full OpenAlex search syntax.
+* **Simple Search:** `machine learning`
+    * *Effect:* Finds papers containing both "machine" AND "learning".
+* **Exact Phrase:** `"generative ai"`
+    * *Effect:* Finds papers with this exact phrase. **Use double quotes (") for phrases.**
+* **Boolean Logic (OR):** `cancer OR tumor OR oncology`
+    * *Effect:* Finds papers containing *at least one* of these terms.
+* **Complex Logic:** `("deep learning" OR "neural networks") AND vision`
+    * *Effect:* Finds papers about vision that also mention deep learning or neural networks.
+* **Grouping:** Use parentheses `()` to group logic as shown above.
+
+#### 2. Start / End Year
+Enter the year as a 4-digit number (e.g., `2023`).
+* *Note:* The range is inclusive (e.g., 2020-2022 includes 2020, 2021, and 2022).
+
+#### 3. Include Conference Papers / Books (y/n)
+* Type `y` (yes) to include these document types in your dataset.
+* Type `n` (no) to exclude them and strictly stick to journal articles.
+
+## 📊 Visualizations Generated
+
+The script generates high-resolution `.png` files in the `results/` directory:
+
+| Visualization | Description |
+| :--- | :--- |
+| **1_publication_trend.png** | Shows the growth or decline of the topic over the selected years. |
+| **2_top_countries.png** | Visualizes which countries are leading the research. |
+| **3_top_researchers.png** | Lists the most prolific authors in the dataset. |
+| **4_top_journals.png** | Shows the top sources (journals/conferences). |
+| **5_impact_timeline_scatter.png** | A scatter plot where bubble size represents citation count, showing high-impact papers. |
+| **6_country_year_heatmap.png** | A heatmap showing publication intensity of the top 10 countries across years. |
+
+## 📂 Output Structure
+
+After running, your folder will look like this:
+
+```
+├── main.py
+├── requirements.txt
+└── results/
+    ├── openalex_papers.csv       # The dataset (upload this to Gemini/ChatGPT!)
+    ├── 1_publication_trend.png
+    ├── 2_top_countries.png
+    ├── ...
+    └── 6_country_year_heatmap.png
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+*Data provided by [OpenAlex](https://openalex.org).*
